@@ -22,7 +22,7 @@ import type { ScheduleEntry } from "@onethu/core";
 import { syncSystemCalendar, systemCalSupported } from "../state/systemCal.js";
 import {
   useCloudCal, syncCloudCal, getCloudCalConfig,
-  putCloudEvent, deleteCloudEvent, putLocalEvent, deleteLocalEvent, buildSemesterEvents,
+  putCloudEvent, deleteCloudEvent, putLocalEvent, deleteLocalEvent, buildSemesterEvents, getVisibleCloudEvents,
 } from "../state/cloudCal.js";
 import { info, logLine } from "../lib/clients.js";
 import { toHomework, useExternalHomework } from "../state/exthw.js";
@@ -415,7 +415,10 @@ export function SchedulePage() {
       const w = caldav.epochToWall("Asia/Shanghai", ms);
       return (new Date(Date.UTC(w.y, w.mo - 1, w.d)).getUTCDay() + 6) % 7;
     };
-    for (const [evts, src] of [[cal.cloudEvents, "cloud"], [cal.localEvents, "local"]] as const) {
+    // #27 回声抑制：cal.cloudEvents 含早期「课表上云」写出的课表/考试镜像，与上面同一
+    // 网格里的教务课表并集会渲染成两块 —— getVisibleCloudEvents 按来源/uid 剔除；设置
+    // 页关掉「显示邮箱同步的日程」时它整体返回空（只留课表与本机手动日程）。
+    for (const [evts, src] of [[getVisibleCloudEvents(), "cloud"], [cal.localEvents, "local"]] as const) {
       for (const o of caldav.expandEventSet(evts, lo, hi)) {
         if (o.allDay) {
           chips.push({ label: o.summary, src, uid: o.uid });
@@ -471,7 +474,7 @@ export function SchedulePage() {
     const clustered = clusterize(inWeek);
     void logLine(`HW-CLUSTER in=${inWeek.length} hw=${inWeek.filter((e) => e.src === "hw").length} out=${clustered.length} clusters=${clustered.filter((e) => e.src === "cluster").map((e) => `${e.courseName}@${e.startTime}-${e.endTime}`).join("|")}`).catch(() => undefined);
     return { entries: clustered, allDayChips: chips };
-  }, [viewWindow, windowRows, campus.data, cal.cloudEvents, cal.localEvents, extHw.items]);
+  }, [viewWindow, windowRows, campus.data, cal.cloudEvents, cal.localEvents, cal.showMailboxEvents, extHw.items]);
 
   const placed = useMemo(() => layout(entries), [entries]);
 
@@ -582,7 +585,8 @@ export function SchedulePage() {
         }
         return;
       }
-      const events: caldav.IcsEvent[] = [...cal.cloudEvents, ...cal.localEvents];
+      // 同一口径：#27 的课表镜像同样不该进 .ics（否则导入系统日历又重复一遍）
+      const events: caldav.IcsEvent[] = [...getVisibleCloudEvents(), ...cal.localEvents];
       if (exportSemester) {
         const r = await buildSemesterEvents(exportSemester, (st, en) => info.getSchedule(st, en));
         events.push(...r.events);

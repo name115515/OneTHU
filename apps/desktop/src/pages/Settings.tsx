@@ -18,7 +18,7 @@ import { parseFavs, resetFavs } from "../state/favorites.js";
 import { confirmOk } from "../lib/confirm.js";
 import { useApp } from "../state/context.js";
 import { displayStudentId } from "../lib/privacy.js";
-import { useCloudCal, configureCloudCal, disconnectCloudCal, syncCloudCal } from "../state/cloudCal.js";
+import { useCloudCal, configureCloudCal, disconnectCloudCal, syncCloudCal, setShowMailboxEvents } from "../state/cloudCal.js";
 import {
   useSystemCal,
   systemCalSupported,
@@ -375,6 +375,20 @@ export function SettingsPage() {
               </div>
               {calMsg ? <div style={{ marginTop: 8, fontSize: 13, color: "var(--text-2)" }}>{calMsg}</div> : null}
             </div>
+          </div>
+        )}
+        {/* #27 附带项：邮箱日程显示开关（关闭后日程页/系统日历只留课表与本机日程） */}
+        {cloud.configured && (
+          <div className="setting-row">
+            <div>
+              <div className="setting-title">显示邮箱同步的日程</div>
+              <div className="setting-desc">关闭后，日程页与系统日历只显示课表与本机日程。</div>
+            </div>
+            <input
+              type="checkbox"
+              checked={cloud.showMailboxEvents}
+              onChange={(e) => void setShowMailboxEvents(e.target.checked)}
+            />
           </div>
         )}
       </Card>

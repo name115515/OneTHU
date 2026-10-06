@@ -8,7 +8,7 @@
  */
 import { expandEventSet } from "@onethu/core/src/caldav/ics.js";
 import { getCampusSnapshot, getLearnSnapshot } from "./data.js";
-import { getCloudEvents, getLocalEvents } from "./cloudCal.js";
+import { getVisibleCloudEvents, getLocalEvents } from "./cloudCal.js";
 import { getExtHwSnapshot, toHomework } from "./exthw.js";
 import { ignoredHwList } from "./hwIgnore.js";
 import type { PlanEventEntry, PlanHomework, PlanScheduleEntry } from "./notifyPlan.js";
@@ -58,7 +58,9 @@ export function collectNotifyInputs(now = Date.now()): {
  *  事件自带的 alarmMinutes 优先于设置里的默认提前量——那是用户对这一场次的显式选择。 */
 function collectCalendarEvents(now: number): PlanEventEntry[] {
   const horizon = now + 8 * 86_400_000;
-  const sources = [...getLocalEvents(), ...getCloudEvents()];
+  // 邮箱事件与日程网格同一口径（#27）：自家课表/考试镜像不再进提醒计划，
+  // 否则同一节课既由 schedule 提醒一次，又被镜像再提醒一次。
+  const sources = [...getLocalEvents(), ...getVisibleCloudEvents()];
   if (sources.length === 0) return [];
   const byUid = new Map(sources.map((e) => [e.uid, e]));
   const out: PlanEventEntry[] = [];

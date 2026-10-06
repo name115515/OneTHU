@@ -5,6 +5,7 @@
  * - caldav.cfg    { email, authCode(混淆) }        —— 与 credentials 同通道
  * - caldav.cache  { savedAt, events: IcsEvent[] }   —— 云端事件全量镜像（含 href/etag）
  * - caldav.local  { events: IcsEvent[] }            —— 不上云的本地手动日程
+ * - caldav.prefs  { showMailboxEvents }             —— 邮箱日程显示开关（#27）
  *
  * 同步策略（服务器无 CTAG/sync-token）：每次全量 Depth:1 etag 扫描，本地
  * etag 缓存比对，仅 GET 变更资源 —— 学生量级毫秒级。
@@ -15,10 +16,12 @@ import { universalFetch } from "../lib/transport.js";
 import { fileRead, fileWrite, fileDelete, obfuscateSecret, deobfuscateSecret, info } from "../lib/clients.js";
 import { getLearnSnapshot, subscribeLearnData, getCalendarSnapshot, subscribeCampusData, subscribeCalendarData } from "./data.js";
 import { getHwRemindState, subscribeHwRemind, type HwRemindState } from "./hwRemind.js";
+import { visibleCloudEvents } from "./calDisplay.js";
 
 const CFG_FILE = "caldav.cfg";
 const CACHE_FILE = "caldav.cache";
 const LOCAL_FILE = "caldav.local";
+const PREFS_FILE = "caldav.prefs";
 
 export interface CloudCalConfig {
   email: string;
@@ -39,6 +42,8 @@ let localEvents: caldav.IcsEvent[] = [];
 let lastSyncAt = 0;
 let syncing = false;
 let lastError: string | null = null;
+/** 「显示邮箱同步的日程」开关（默认开 = 保持既有行为） */
+let showMailboxEvents = true;
 const listeners = new Set<() => void>();
 const emit = (): void => listeners.forEach((fn) => fn());
 
@@ -54,6 +59,9 @@ async function persistCache(): Promise<void> {
 }
 async function persistLocal(): Promise<void> {
   await fileWrite(LOCAL_FILE, JSON.stringify({ events: localEvents }));
+}
+async function persistPrefs(): Promise<void> {
+  await fileWrite(PREFS_FILE, JSON.stringify({ showMailboxEvents }));
 }
 
 /** 首次使用时从文件恢复（hook 挂载触发） */
@@ -88,6 +96,15 @@ async function ensureLoaded(): Promise<void> {
   } catch {
     /* 忽略 */
   }
+  try {
+    const raw = await fileRead(PREFS_FILE);
+    if (raw) {
+      const j = JSON.parse(raw) as { showMailboxEvents?: boolean };
+      if (typeof j.showMailboxEvents === "boolean") showMailboxEvents = j.showMailboxEvents;
+    }
+  } catch {
+    /* 忽略 */
+  }
   emit();
 }
 
@@ -114,6 +131,18 @@ export function getCloudCalConfig(): CloudCalConfig | null {
 /** 门面（OH）读取用：当前云端事件镜像 */
 export function getCloudEvents(): caldav.IcsEvent[] {
   return cloudEvents;
+}
+
+/** 切换「显示邮箱同步的日程」：落盘 + 通知（日程页重渲染、系统日历防抖重推都挂在 listeners） */
+export async function setShowMailboxEvents(on: boolean): Promise<void> {
+  showMailboxEvents = on;
+  await persistPrefs();
+  emit();
+}
+
+/** 日程页 / 系统日历实际消费的邮箱事件：剔除自家镜像（#27）+ 关闭时整体隐藏 */
+export function getVisibleCloudEvents(): caldav.IcsEvent[] {
+  return visibleCloudEvents(cloudEvents, showMailboxEvents);
 }
 
 /** 门面（OH）读取用：距上次同步毫秒数（Infinity=从未） */
@@ -249,6 +278,8 @@ export interface CloudCalState {
   lastSyncAt: number;
   syncing: boolean;
   error: string | null;
+  /** 「显示邮箱同步的日程」开关（设置页勾选） */
+  showMailboxEvents: boolean;
 }
 
 export function useCloudCal(): CloudCalState {
@@ -261,6 +292,7 @@ export function useCloudCal(): CloudCalState {
     lastSyncAt,
     syncing,
     error: lastError,
+    showMailboxEvents,
   }));
   useEffect(() => {
     void ensureLoaded();
@@ -274,6 +306,7 @@ export function useCloudCal(): CloudCalState {
         lastSyncAt,
         syncing,
         error: lastError,
+        showMailboxEvents,
       });
     listeners.add(update);
     update();

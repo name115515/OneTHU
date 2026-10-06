@@ -16,7 +16,7 @@ import { useEffect, useState } from "react";
 import { caldav } from "@onethu/core";
 import type { CalendarSemester } from "@onethu/core";
 import { fileRead, fileWrite, info } from "../lib/clients.js";
-import { getCloudEvents, getLocalEvents, buildSemesterEvents, onCloudCalChange } from "./cloudCal.js";
+import { getVisibleCloudEvents, getLocalEvents, buildSemesterEvents, onCloudCalChange } from "./cloudCal.js";
 import { parseLearnTime } from "@onethu/core";
 import type { ScheduleEntry } from "@onethu/core";
 import { cacheGet, cacheSet } from "./cache.js";
@@ -211,7 +211,9 @@ async function fetchSemesterSchedule(sem: CalendarSemester): Promise<ScheduleEnt
 
 async function buildPayload(): Promise<SyncPayloadArg> {
   const now = Date.now();
-  const all = [...getCloudEvents(), ...getLocalEvents()];
+  // 邮箱事件经 #27 回声抑制 + 「显示邮箱同步的日程」开关过滤：自家课表镜像不再进
+  // 系统日历（否则手机端与下方 buildSemesterEvents 写出的课表事件是同一节课两条）。
+  const all = [...getVisibleCloudEvents(), ...getLocalEvents()];
 
   // 窗口：滚动窗口 ∪ 学期范围 ∪ 单场事件极值（RRULE 展开上限 = 滚动上限）
   let windowStart = now - PAST_WINDOW;
